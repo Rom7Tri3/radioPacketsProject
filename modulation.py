@@ -2,6 +2,7 @@ import numpy as np
 import soundfile as sf
 import matplotlib.pyplot as plt
 from itertools import product
+import sounddevice as sd
 
 # Parameters
 fs = 48000
@@ -14,10 +15,10 @@ values = [-15, -13, -11, -9, -7, -5, -3, -1, 1, 3, 5, 7, 9, 11, 13, 15]
 possible_tuples = list(product(values, repeat=2))
 # Iterate over all 256 possible 8-bit combinations
 for i in range(256):
-    bits = f"{i:08b}"  # Convert integer `i` to an 8-bit binary string
-    bit_tuple = tuple(map(int, bits))  # Convert the binary string to a tuple of integers
+    bits = f"{i:08b}"
+    bit_tuple = tuple(map(int, bits))
     qam_map[bit_tuple] = possible_tuples[i]
-print(qam_map)
+#print(qam_map)
 
 def string_to_bits(input_string):
     """
@@ -37,7 +38,7 @@ def modulate(bits):
     Modulates a list of bits into a QAM signal using 256-QAM.
     """
     if len(bits) % 8 != 0:
-        bits.extend([0] * (8 - len(bits) % 8))  # Padding with zeros if not a multiple of 8
+        bits.extend([0] * (8 - len(bits) % 8))  #Not sure if padding is even needed, sinde symbol is 8 bits
 
     signal = []
     for i in range(0, len(bits), 8):
@@ -65,7 +66,7 @@ def demodulate(signal):
         # Calculate I and Q
         I = np.sum(chunk * ref_I) / (amplitude * num_samples)
         Q = np.sum(chunk * ref_Q) / (amplitude * num_samples)
-        print(I, Q)
+        #print(I, Q)
         # Clamp I and Q to nearest valid values in the constellation
         I = clean_signal(I)
         Q = clean_signal(Q)
@@ -85,7 +86,7 @@ def clean_signal(value):
     Rounds the given value to the closest value in {±7, ±5, ±3, ±1}.
     """
     value=value*2
-    print(value)
+    #print(value)
     targets = [-15, -13, -11, -9, -7, -5, -3, -1, 1, 3, 5, 7, 9, 11, 13, 15]
     return min(targets, key=lambda x: abs(value - x))
 
@@ -105,6 +106,40 @@ def plot_wav(file_path):
     plt.legend()
     plt.tight_layout()
     plt.show()
+
+
+def sendMessage(message):
+    """
+    Sends a .wav message to the QAM receiver by autoplaying the file and saving it.
+    Includes a 2-second high-pitch tone at the beginning and another different high-pitch tone at the end.
+    """
+
+    fs = 48000
+    duration = 1
+
+    #TODO: Use FFT to find start- and end-freq to clip .wav for demodulation!!
+    freq_start = 2000
+    freq_end = 3000
+    t = np.linspace(0, duration, int(fs * duration), endpoint=False)
+    start_tone = 0.5 * np.sin(2 * np.pi * freq_start * t)
+    end_tone = 0.5 * np.sin(2 * np.pi * freq_end * t)
+
+
+    bits = string_to_bits(message)
+    qam_signal = modulate(bits)
+
+
+    full_signal = np.concatenate((start_tone, qam_signal, end_tone))
+
+    audio_file = "outgoing.wav"
+    sf.write(audio_file, full_signal, fs)
+    plot_wav(audio_file)
+
+
+    print(f"Playing {audio_file}...")
+    data, samplerate = sf.read(audio_file)
+    sd.play(data, samplerate)
+    sd.wait()
 
 def main():
     """
@@ -130,3 +165,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
