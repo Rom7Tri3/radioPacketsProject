@@ -2,7 +2,11 @@ import numpy as np
 import soundfile as sf
 import matplotlib.pyplot as plt
 from itertools import product
-import sounddevice as sd
+try:
+    import sounddevice as sd
+except:
+    print("No Auto-play available")
+
 
 # Parameters
 fs = 48000
@@ -108,8 +112,11 @@ def sendMessage(message):
 
     print(f"Playing {audio_file}...")
     data, samplerate = sf.read(audio_file)
-    sd.play(data, samplerate)
-    sd.wait()
+    try:
+        sd.play(data, samplerate)
+        sd.wait()
+    except:
+        print("¯\_(ツ)_/¯")
     print(f"Saved as {audio_file}")
 
 def recieveMessage(audio_file):
