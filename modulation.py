@@ -2,6 +2,7 @@ import numpy as np
 import soundfile as sf
 import matplotlib.pyplot as plt
 from itertools import product
+import scipy.signal as signal
 try:
     import sounddevice as sd
 except:
@@ -168,11 +169,45 @@ def extract_audio_between_frequencies(input_filename, output_filename):
 
 
 
+def clean_wav(input_wav, output_wav):
+    """
+    Cleans a .wav file by applying a high-pass filter and normalizing the signal.
+
+    Args:
+        input_wav (str): Path to the input .wav file.
+        output_wav (str): Path to save the cleaned .wav file.
+    """
+    # Read the audio file
+    data, samplerate = sf.read(input_wav)
+
+    # If stereo, convert to mono by averaging channels
+    if len(data.shape) > 1:
+        data = np.mean(data, axis=1)
+
+    # Apply a high-pass filter to remove low-frequency noise
+    sos = signal.butter(10, 100, btype='highpass', fs=samplerate, output='sos')  # 100 Hz cutoff
+    filtered_data = signal.sosfilt(sos, data)
+
+    # Normalize the signal to prevent clipping
+    normalized_data = filtered_data / np.max(np.abs(filtered_data))
+
+    # Save the cleaned audio file
+    sf.write(output_wav, normalized_data, samplerate)
+    print(f"Cleaned audio saved to {output_wav}")
+
+# Example usage:
+# clean_wav("noisy_audio.wav", "cleaned_audio.wav")
+
+
+
+
 def main():
     input_string = "Hello World!"
     print(f"Input string: {input_string}")
     sendMessage(input_string)
-    recieveMessage("outgoing.wav")
+    clean_wav("noise2.wav", "noise.wav")
+    plot_wav("noise.wav")
+    recieveMessage("noise.wav")
     plot_wav("outgoing.wav")
 
 
