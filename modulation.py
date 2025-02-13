@@ -1,180 +1,101 @@
+#Takes bits, modulatets bits to .wav, demodulates .wav to bits, returns bits.
+
+import json
 import numpy as np
-import soundfile as sf
-import matplotlib.pyplot as plt
-from itertools import product
-try:
-    import sounddevice as sd
-except:
-    print("No Auto-play available")
+import scipy.signal as signal
+import scipy.io.wavfile as wav
+import sounddevice as sd
+
+# Load configuration
+with open("config.json", "r") as f:
+    config = json.load(f)
+
+fs = config["fs"]  # Sampling rate
+baud_rate = config["baud_rate"]  # Symbol rate
+samples_per_symbol = fs // baud_rate
+carrier_freq = config["carrier_freq"]  # Carrier frequency
+qam_order = config["qam_order"]  # QAM order
+
+# Generate QAM Constellation
+def generate_qam_constellation(order):
+    m = int(np.sqrt(order))
+    real = np.arange(-m + 1, m, 2)
+    imag = np.arange(-m + 1, m, 2) * 1j
+    constellation = np.array([x + y for x in real for y in imag])
+    constellation /= np.sqrt((constellation.real**2 + constellation.imag**2).mean())  # Normalize power
+    return constellation
+
+constellation = generate_qam_constellation(qam_order)
+
+# Mapping bits to symbols
+def bits_to_symbols(bits):
+    bits = np.array(bits)  # Ensure it's a NumPy array
+    num_bits_per_symbol = int(np.log2(qam_order))
+    assert len(bits) % num_bits_per_symbol == 0, "Bit length must be a multiple of symbol size."
+
+    # Reshape bits into groups of log2(QAM order)
+    bit_groups = bits.reshape(-1, num_bits_per_symbol)
+
+    # Convert binary groups to decimal values
+    decimal_values = np.dot(bit_groups, 2**np.arange(num_bits_per_symbol)[::-1])
+
+    # Ensure values map correctly within constellation bounds
+    assert np.all(decimal_values < qam_order), "Index out of range for constellation."
+
+    return constellation[decimal_values]
 
 
-# Parameters
-fs = 48000
-bit_duration = 0.1
-carrier_freq = 300
-amplitude = 0.05
+# Modulate to waveform
+def qam_modulate(bits):
+    symbols = bits_to_symbols(bits)
+    time = np.arange(len(symbols) * samples_per_symbol) / fs
+    upsampled = np.zeros(len(symbols) * samples_per_symbol, dtype=np.complex64)
+    upsampled[::samples_per_symbol] = symbols
+    pulse = signal.firwin(101, 1.0/samples_per_symbol, window="hamming")
+    shaped_signal = np.convolve(upsampled, pulse, mode='same')
+    carrier = np.exp(2j * np.pi * carrier_freq * time)
+    modulated_signal = np.real(shaped_signal * carrier)
+    return modulated_signal
 
-qam_map = {}
-values = [-15, -13, -11, -9, -7, -5, -3, -1, 1, 3, 5, 7, 9, 11, 13, 15]
-possible_tuples = list(product(values, repeat=2))
-for i in range(256):
-    bits = f"{i:08b}"
-    bit_tuple = tuple(map(int, bits))
-    qam_map[bit_tuple] = possible_tuples[i]
+# Demodulate from recorded waveform
+def qam_demodulate(signal_rx):
+    time = np.arange(len(signal_rx)) / fs
+    carrier = np.exp(-2j * np.pi * carrier_freq * time)
+    mixed_signal = signal_rx * carrier
+    lowpass = signal.firwin(101, 1.0/samples_per_symbol, window="hamming")
+    baseband = np.convolve(mixed_signal, lowpass, mode='same')
+    symbols_rx = baseband[::samples_per_symbol]
 
+    # Demodulation (nearest constellation point)
+    distances = np.abs(symbols_rx[:, None] - constellation)
+    decoded_symbols = np.argmin(distances, axis=1)
+    decoded_bits = np.unpackbits(decoded_symbols.astype(np.uint8)[:, None], axis=1)[:, -int(np.log2(qam_order)):]
+    return decoded_bits.flatten()
 
-def string_to_bits(input_string):
-    return [int(bit) for char in input_string for bit in f"{ord(char):08b}"]
+# Save to .wav
+def save_wav(filename, signal):
+    wav.write(filename, fs, np.int16(signal * 32767))
 
+# Record from microphone
+def record_wav(duration):
+    recording = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='float32')
+    sd.wait()
+    return recording[:, 0]
 
-def bits_to_string(bits):
-    chars = [chr(int("".join(map(str, bits[i:i + 8])), 2)) for i in range(0, len(bits), 8)]
-    return "".join(chars)
-
-
-def modulate(bits):
-    if len(bits) % 8 != 0:
-        bits.extend([0] * (8 - len(bits) % 8))
-
-    signal = []
-    for i in range(0, len(bits), 8):
-        group = tuple(bits[i:i + 8])
-        I, Q = qam_map[group]
-        t = np.linspace(0, bit_duration, int(fs * bit_duration), endpoint=False)
-        carrier_I = amplitude * I * np.cos(2 * np.pi * carrier_freq * t)
-        carrier_Q = amplitude * Q * np.sin(2 * np.pi * carrier_freq * t)
-        signal.extend(carrier_I + carrier_Q)
-    return np.array(signal)
-
-
-def demodulate(signal):
-    num_samples = int(fs * bit_duration)
-    num_symbols = len(signal) // num_samples
-    bits = []
-
-    for i in range(num_symbols):
-        chunk = signal[i * num_samples:(i + 1) * num_samples]
-        t = np.linspace(0, bit_duration, num_samples, endpoint=False)
-        ref_I = np.cos(2 * np.pi * carrier_freq * t)
-        ref_Q = np.sin(2 * np.pi * carrier_freq * t)
-        I = np.sum(chunk * ref_I) / (amplitude * num_samples)
-        Q = np.sum(chunk * ref_Q) / (amplitude * num_samples)
-        I = clean_signal(I)
-        Q = clean_signal(Q)
-
-        for key, value in qam_map.items():
-            if value == (I, Q):
-                bits.extend(key)
-                break
-        else:
-            print(f"Unmatched I/Q pair: ({I}, {Q})")
-
-    return bits
-
-
-def clean_signal(value):
-    value *= 2
-    targets = [-15, -13, -11, -9, -7, -5, -3, -1, 1, 3, 5, 7, 9, 11, 13, 15]
-    return min(targets, key=lambda x: abs(value - x))
-
-
-def plot_wav(file_path):
-    signal, sample_rate = sf.read(file_path)
-    time = np.linspace(0, len(signal) / sample_rate, len(signal), endpoint=False)
-    plt.figure(figsize=(10, 6))
-    plt.plot(time, signal, label="QAM Signal", color="blue", linewidth=1)
-    plt.title("Waveform of QAM Signal")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Amplitude")
-    plt.grid()
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-
-def sendMessage(message):
-    duration = 0.1
-    freq_start = 2000
-    freq_end = 3000
-
-    t = np.linspace(0, duration, int(fs * duration), endpoint=False)
-    start_tone = np.sin(2 * np.pi * freq_start * t)
-    end_tone = np.sin(2 * np.pi * freq_end * t)
-
-    bits = string_to_bits(message)
-    qam_signal = modulate(bits)
-
-    full_signal = np.concatenate((start_tone, qam_signal, end_tone))
-
-    audio_file = "outgoing.wav"
-    sf.write(audio_file, full_signal, fs)
-    plot_wav(audio_file)
-
-    print(f"Playing {audio_file}...")
-    data, samplerate = sf.read(audio_file)
-    try:
-        sd.play(data, samplerate)
-        sd.wait()
-    except:
-        print("¯\_(ツ)_/¯")
-    print(f"Saved as {audio_file}")
-
-def recieveMessage(audio_file):
-    extracted_file = extract_audio_between_frequencies(audio_file, "extracted.wav")
-    if extracted_file is None:
-        print("Failed to extract and process the message.")
-        return
-
-    extracted_signal, _ = sf.read(extracted_file)
-    demodulated_bits = demodulate(extracted_signal)
-    output_string = bits_to_string(demodulated_bits)
-    print(f"Demodulated string: {output_string}")
-
-def extract_audio_between_frequencies(input_filename, output_filename):
-    freq_end = 3000
-    freq_start = 2000
-    chunk_duration = 0.1
-    tolerance = 10
-
-    data, rate = sf.read(input_filename)
-    if data.ndim > 1:
-        data = data[:, 0]
-
-    chunk_size = int(chunk_duration * rate)
-    num_chunks = len(data) // chunk_size
-
-    def find_chunk_with_frequency(target_freq):
-        for i in range(num_chunks):
-            chunk = data[i * chunk_size:(i + 1) * chunk_size]
-            freqs = np.fft.fftfreq(chunk_size, 1 / rate)
-            spectrum = np.abs(np.fft.fft(chunk))
-            dominant_freq = freqs[np.argmax(spectrum[:chunk_size // 2])]
-            if abs(dominant_freq - target_freq) < tolerance:
-                return i * chunk_size
-        return -1
-
-    start_index = find_chunk_with_frequency(freq_start)
-    end_index = find_chunk_with_frequency(freq_end)
-
-    if start_index == -1 or end_index == -1 or start_index >= end_index:
-        print("Failed to extract audio between frequencies.")
-        return None  # Return None if extraction fails
-
-    segment = data[start_index:end_index]
-    sf.write(output_filename, segment, rate)
-    print(f"Extracted audio saved to {output_filename}")
-    plot_wav(output_filename)
-    return output_filename
-
-
-
-def main():
-    input_string = "Hello World!"
-    print(f"Input string: {input_string}")
-    sendMessage(input_string)
-    recieveMessage("outgoing.wav")
-    plot_wav("outgoing.wav")
-
-
+# Example Usage
 if __name__ == "__main__":
-    main()
+    message_bits = np.random.randint(0, 2, 1000)  # Example random bits
+    modulated_signal = qam_modulate(message_bits)
+    save_wav("qam_output.wav", modulated_signal)
+
+    print("Playing modulated signal...")
+    sd.play(modulated_signal, samplerate=fs)
+    sd.wait()
+
+    print("Recording received signal...")
+    received_signal = record_wav(duration=len(modulated_signal) / fs)
+
+    print("Demodulating received signal...")
+    recovered_bits = qam_demodulate(received_signal)
+
+    print(f"Bit error rate: {np.mean(message_bits != recovered_bits)}")

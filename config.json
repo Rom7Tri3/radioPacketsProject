@@ -1,0 +1,6 @@
+{
+    "fs": 44100,
+    "baud_rate": 2000,
+    "carrier_freq": 4000,
+    "qam_order": 16
+}
