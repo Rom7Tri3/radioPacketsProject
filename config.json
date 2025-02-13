@@ -1,6 +1,6 @@
 {
-    "fs": 44100,
-    "baud_rate": 2000,
-    "carrier_freq": 4000,
-    "qam_order": 16
+    "sampling_rate": 48000,
+    "symbol_rate": 100,
+    "carrier_frequency": 3000,
+    "qam_order": 4
 }
