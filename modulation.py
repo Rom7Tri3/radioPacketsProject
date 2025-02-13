@@ -58,7 +58,11 @@ def demodulate(signal):
     bits = []
     for i in range(0, len(signal), samples_per_symbol):
         symbol_signal = signal[i:i + samples_per_symbol]
-        # Calculate in-phase component
+        if len(symbol_signal) != samples_per_symbol:
+            # If there is an incomplete symbol at the end, we can skip it
+            continue
+
+        # Calculate in-phase component (match the time vector and signal length)
         in_phase = np.sum(symbol_signal * np.cos(2 * np.pi * carrier_frequency * t))
 
         # Decision rule for BPSK symbols
@@ -71,12 +75,15 @@ def demodulate(signal):
 
 
 # Example usage:
-bits = [0, 1, 0, 0, 1, 1, 0, 1]  # Example bit stream
-symbols = modulate(bits)  # BPSK modulation
-signal = generate_waveform(symbols)  # Generate audio waveform
-save_wav('output.wav', signal)  # Save to .wav file
+if __name__ == "__main__":
+    bits = [0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0,
+            1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0,
+            0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0]  # Example bit stream
+    symbols = modulate(bits)  # BPSK modulation
+    signal = generate_waveform(symbols)  # Generate audio waveform
+    save_wav('output.wav', signal)  # Save to .wav file
 
-# Demodulate from the generated .wav file
-audio_signal, _ = sf.read('output.wav')
-demodulated_bits = demodulate(audio_signal)
-print("Demodulated bits:", demodulated_bits)
+    # Demodulate from the generated .wav file
+    audio_signal, _ = sf.read('output.wav')
+    demodulated_bits = demodulate(audio_signal)
+    print("Demodulated bits:", demodulated_bits)
