@@ -52,10 +52,7 @@ if __name__ == "__main__":
     ah.play_wav('with_preamble.wav')
 
     # Remove preamble
-    #ah.remove_tone_preamble("with_preamble.wav", "cleaned.wav")
-
-    #TESTING WITH NOISE:
-    ah.remove_tone_preamble("Noise.wav", "cleaned.wav")
+    ah.clean_data('with_preamble.wav', 'cleaned.wav')
 
     # Demodulate from file
     decoded_bits = demodulation.demodulate("cleaned.wav", baud=50, sample_rate=48000)

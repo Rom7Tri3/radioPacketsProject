@@ -44,7 +44,7 @@ def demodulate(filename, baud=100, sample_rate=48000):
         f, t, Sxx = spectrogram(symbol, fs=sample_rate, nperseg=samples_per_symbol)
 
         # Identify the dominant frequency for the current symbol
-        dominant_freq = f[np.argmax(Sxx)]
+        dominant_freq = f[np.argmax(np.sum(Sxx, axis=1))]
 
         # Find the closest frequency in the reverse_mapping
         closest_freq = min(reverse_mapping.keys(), key=lambda x: abs(x - dominant_freq))
