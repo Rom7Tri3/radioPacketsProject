@@ -1,69 +1,57 @@
-import modulation as m
-import audio_helper as h
-import matplotlib.pyplot as plt
-import soundfile as sf
-
-def plot_wav(file_path):
-    # Read the audio data from the .wav file
-    audio_data, sample_rate = sf.read(file_path)
-
-    # Create a time axis for the audio data
-    time = [i / sample_rate for i in range(len(audio_data))]
-
-    # Plot the waveform
-    plt.figure(figsize=(10, 4))
-    plt.plot(time, audio_data, label='Audio Waveform')
-    plt.title('Waveform of ' + file_path)
-    plt.xlabel('Time [s]')
-    plt.ylabel('Amplitude')
-    plt.grid(True)
-    plt.show()
-
-# Example usage:
-# plot_wav('output.wav')
+import modulation
+import demodulation
+import audio_helper as ah
+import numpy as np
+import os
 
 
 def string_to_bits(s):
-    # Convert each character to its 8-bit binary representation
-    return [bit for c in s for bit in bin(ord(c))[2:].zfill(8)]
+    return [int(b) for char in s.encode('utf-8') for b in format(char, '08b')]
+
 
 def bits_to_string(bits):
-    # Ensure bits are in groups of 8
-    return ''.join(chr(int(''.join(map(str, bits[i:i + 8])), 2)) for i in range(0, len(bits), 8))
+    byte_chunks = [bits[i:i + 8] for i in range(0, len(bits), 8)]
+    return bytes(int(''.join(map(str, byte)), 2) for byte in byte_chunks).decode('utf-8', errors='ignore')
 
-def main():
-    # Test string
-    s = input("Send Message:")
+def calculate_ber(original_bits, decoded_bits):
+    """Calculates the Bit Error Rate (BER) between two bit sequences."""
+    if len(original_bits) != len(decoded_bits):
+        print("Warning: Bit sequences have different lengths! Truncating to match the shorter one.")
+        min_length = min(len(original_bits), len(decoded_bits))
+        original_bits = original_bits[:min_length]
+        decoded_bits = decoded_bits[:min_length]
 
-    # Convert string to bits
-    bits = string_to_bits(s)
-    print("String to bits:", bits)
+    errors = sum(1 for o, d in zip(original_bits, decoded_bits) if o != d)
+    ber = errors / len(original_bits)
+    return ber
 
-    # Modulate
-    symbols = m.modulate(bits)  # BPSK modulation
-    signal = m.generate_waveform(symbols)  # Generate audio waveform
-    m.save_wav('output.wav', signal)  # Save to .wav file
-    plot_wav('output.wav')
 
-    # Prep audio
-    h.add_markers('output.wav', 'output_m.wav')
-    plot_wav('output_m.wav')
-
-    # TODO: Play audio file
-
-    # Unprep audio
-    h.remove_markers('output_m.wav', 'received.wav')
-    plot_wav('received.wav')
-
-    # Demodulate
-    audio_signal, _ = sf.read('received.wav')
-    demodulated_bits = m.demodulate(audio_signal)
-    print("Demodulated bits:", demodulated_bits)
-    bits = demodulated_bits
-
-    # Convert bits back to string
-    reconstructed_string = bits_to_string(bits)
-    print("Bits to string:", reconstructed_string)  # 'Hello'
 
 if __name__ == "__main__":
-    main()
+    input_string = input("User input: ")
+    bits = string_to_bits(input_string)
+    print("Original Bits:", bits)
+
+    # Modulate and save to file
+    modulation.modulate(bits, filename="output.wav", baud=50, sample_rate=48000)
+    if not os.path.exists("output.wav"):
+        raise FileNotFoundError("The file 'output.wav' was not created. Check modulation module.")
+
+    # Add preamble
+    ah.add_tone_preamble("output.wav", "with_preamble.wav")
+
+    # Play sound
+    ah.play_wav('with_preamble.wav')
+
+    # Remove preamble
+    ah.remove_tone_preamble("with_preamble.wav", "cleaned.wav")
+
+    # Demodulate from file
+    decoded_bits = demodulation.demodulate("cleaned.wav", baud=50, sample_rate=48000)
+    print("Decoded Bits:", decoded_bits)
+
+    # Convert back to string
+    output_string = bits_to_string(decoded_bits)
+    print("Decoded String:", output_string)
+
+    print(calculate_ber(bits, decoded_bits))

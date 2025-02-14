@@ -1,89 +1,48 @@
 import numpy as np
 import soundfile as sf
-import json
 
 
+def modulate(bits, filename="output.wav", baud=100, sample_rate=48000):
+    """
+    Maps a sequence of bits to tones and saves as a .wav file.
 
-# Load parameters from JSON config file
-def load_config(config_file='config.json'):
-    with open(config_file, 'r') as f:
-        config = json.load(f)
-    return config
+    Parameters:
+    - bits: List of bits (0s and 1s)
+    - filename: Name of the output .wav file
+    - baud: Symbol rate (symbols per second)
+    - sample_rate: Sampling rate in Hz
+    """
+    symbol_duration = 1 / baud  # Duration of each symbol in seconds
+    samples_per_symbol = int(sample_rate * symbol_duration)
 
+    # Define bit-to-tone mapping
+    mapping = {
+        (0, 0): 1500,
+        (0, 1): 2000,
+        (1, 0): 2500,
+        (1, 1): 3000,
+    }
 
-config = load_config()
+    # Ensure bits array length is even
+    if len(bits) % 2 != 0:
+        bits.append(0)  # Pad with zero if odd
 
-sampling_rate = config["sampling_rate"]  # Hz
-symbol_rate = config["symbol_rate"]  # symbols per second
-samples_per_symbol = sampling_rate // symbol_rate
-carrier_frequency = config["carrier_frequency"]  # Hz
-qam_order = config["qam_order"]  # 2 for BPSK
+    # Convert bits to symbols (pairs of bits)
+    symbols = [tuple(bits[i:i + 2]) for i in range(0, len(bits), 2)]
 
+    # Generate waveform
+    waveform = np.concatenate([
+        np.sin(2 * np.pi * mapping[symbol] * np.arange(samples_per_symbol) / sample_rate)
+        for symbol in symbols
+    ])
 
-# BPSK modulation: 0 -> +1, 1 -> -1
-def modulate(bits):
-    symbols = []
-    for bit in bits:
-        if bit == 0:
-            symbols.append(1)  # +1 for bit 0
-        else:
-            symbols.append(-1)  # -1 for bit 1
-    return symbols
+    # Normalize waveform to avoid clipping
+    waveform = 0.8 * waveform
 
-
-def generate_waveform(symbols):
-    # Time vector for one symbol
-    t = np.linspace(0, 1 / symbol_rate, samples_per_symbol, endpoint=False)
-
-    # Generate the waveform
-    signal = np.array([])
-    for symbol in symbols:
-        # Generate the signal for each symbol (modulate the carrier)
-        real_part = np.cos(2 * np.pi * carrier_frequency * t) * symbol
-        signal = np.concatenate([signal, real_part])
-
-    return signal
-
-
-def save_wav(filename, signal):
-    # Save the waveform to a .wav file
-    sf.write(filename, signal, sampling_rate)
+    # Save to WAV file
+    sf.write(filename, waveform, sample_rate)
+    print(f"Saved {filename} with {len(symbols)} symbols.")
 
 
-def demodulate(signal):
-    # Resample signal to match the symbol rate
-    symbol_time = 1 / symbol_rate
-    t = np.linspace(0, symbol_time, samples_per_symbol, endpoint=False)
-
-    bits = []
-    for i in range(0, len(signal), samples_per_symbol):
-        symbol_signal = signal[i:i + samples_per_symbol]
-        if len(symbol_signal) != samples_per_symbol:
-            # If there is an incomplete symbol at the end, we can skip it
-            continue
-
-        # Calculate in-phase component (match the time vector and signal length)
-        in_phase = np.sum(symbol_signal * np.cos(2 * np.pi * carrier_frequency * t))
-
-        # Decision rule for BPSK symbols
-        if in_phase > 0:
-            bits.append(0)
-        else:
-            bits.append(1)
-
-    return bits
-
-
-# Example usage:
-if __name__ == "__main__":
-    bits = [0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0,
-            1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0,
-            0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0]  # Example bit stream
-    symbols = modulate(bits)  # BPSK modulation
-    signal = generate_waveform(symbols)  # Generate audio waveform
-    save_wav('output.wav', signal)  # Save to .wav file
-
-    # Demodulate from the generated .wav file
-    audio_signal, _ = sf.read('output.wav')
-    demodulated_bits = demodulate(audio_signal)
-    print("Demodulated bits:", demodulated_bits)
+# Example usage
+# modulate([0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0])
