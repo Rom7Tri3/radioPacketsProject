@@ -3,15 +3,19 @@ import demodulation
 import audio_helper as ah
 import numpy as np
 import os
+import FEC as ec
 
 
-def string_to_bits(s):
-    return [int(b) for char in s.encode('utf-8') for b in format(char, '08b')]
+def to_bits(barr):
+    return [int(b) for byte in barr for b in format(byte, '08b')]
 
 
-def bits_to_string(bits):
-    byte_chunks = [bits[i:i + 8] for i in range(0, len(bits), 8)]
-    return bytes(int(''.join(map(str, byte)), 2) for byte in byte_chunks).decode('utf-8', errors='ignore')
+def bits_to(bits):
+    byte_values = [int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    return bytearray(byte_values)
+
+def extract_ascii_string(byte_data):
+    return ''.join(chr(b) for b in byte_data if 32 <= b <= 126)
 
 def calculate_ber(original_bits, decoded_bits):
     """Calculates the Bit Error Rate (BER) between two bit sequences."""
@@ -29,7 +33,11 @@ def calculate_ber(original_bits, decoded_bits):
 
 if __name__ == "__main__":
     input_string = input("User input: ")
-    bits = string_to_bits(input_string)
+
+    # ReedSolo encode
+    message = ec.encode_reed_solomon(input_string)
+
+    bits = to_bits(message)
     print("Original Bits:", bits)
 
     # Modulate and save to file
@@ -44,14 +52,21 @@ if __name__ == "__main__":
     ah.play_wav('with_preamble.wav')
 
     # Remove preamble
-    ah.remove_tone_preamble("with_preamble.wav", "cleaned.wav")
+    #ah.remove_tone_preamble("with_preamble.wav", "cleaned.wav")
+
+    #TESTING WITH NOISE:
+    ah.remove_tone_preamble("Noise.wav", "cleaned.wav")
 
     # Demodulate from file
     decoded_bits = demodulation.demodulate("cleaned.wav", baud=50, sample_rate=48000)
+    ec.decode_reed_solomon(bits_to(decoded_bits))
     print("Decoded Bits:", decoded_bits)
 
     # Convert back to string
-    output_string = bits_to_string(decoded_bits)
+    output_string = extract_ascii_string(bits_to(decoded_bits))
+
     print("Decoded String:", output_string)
 
     print(calculate_ber(bits, decoded_bits))
+
+
