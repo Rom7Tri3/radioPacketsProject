@@ -10,7 +10,7 @@ import threading
 import os
 import main
 
-SAMPLE_RATE = 48000
+SAMPLE_RATE = 44100
 DURATION = 5  # Recording duration in seconds
 
 

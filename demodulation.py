@@ -1,59 +1,52 @@
 import numpy as np
-import soundfile as sf
-from scipy.signal import spectrogram
+from scipy.io.wavfile import read
+
+# Parameters (same as modulation)
+sampling_rate = 48000  # Hz
+symbol_rate = 10  # Symbols per second
+samples_per_symbol = sampling_rate // symbol_rate
+carrier_frequency = 500  # Hz
 
 
-def demodulate(filename, baud=100, sample_rate=48000):
-    """
-    Decodes a .wav file into a sequence of bits based on detected tones.
+# Demodulation function (Extract bits from received .wav file)
+def demodulate(filename):
+    # Read the .wav file
+    sample_rate, received_signal = read(filename)
+    print("Sample_rate: ", sample_rate)
 
-    Parameters:
-    - filename: Name of the input .wav file
-    - baud: Symbol rate (symbols per second)
-    - sample_rate: Sampling rate in Hz
+    # Convert stereo to mono if necessary
+    if len(received_signal.shape) > 1:
+        received_signal = np.mean(received_signal, axis=1)  # Convert stereo to mono
 
-    Returns:
-    - List of decoded bits
-    """
-    # Load the audio file
-    signal, sr = sf.read(filename)
+    # Normalize the signal
+    received_signal = received_signal / np.max(np.abs(received_signal))  # Scale to -1 to 1
 
-    if sr != sample_rate:
-        raise ValueError(f"Sample rate of the file ({sr}) doesn't match the expected sample rate ({sample_rate}).")
+    # Ensure the correct sample rate
+    if sample_rate != sampling_rate:
+        raise ValueError(f"Expected {sampling_rate} Hz, but got {sample_rate} Hz")
 
-    # Define tone-to-bit mapping
-    reverse_mapping = {
-        1500: (0, 0),
-        2000: (0, 1),
-        2500: (1, 0),
-        3000: (1, 1),
-    }
+    # Time array
+    t = np.arange(len(received_signal)) / sampling_rate
+    bits = []
 
-    # Calculate the number of samples per symbol
-    samples_per_symbol = int(sample_rate / baud)
+    for i in range(0, len(received_signal) - samples_per_symbol, samples_per_symbol):
+        symbol_window = received_signal[i:i+samples_per_symbol]
 
-    # Ensure the signal length is a multiple of samples_per_symbol
-    signal = signal[:len(signal) // samples_per_symbol * samples_per_symbol]
+        # Ensure we have a complete symbol
+        if len(symbol_window) < samples_per_symbol:
+            break
 
-    # Reshape the signal into chunks of samples_per_symbol
-    reshaped_signal = signal.reshape(-1, samples_per_symbol)
+        # Extract In-phase (I) and Quadrature (Q) components
+        I = np.mean(symbol_window * np.cos(2 * np.pi * carrier_frequency * t[i:i + samples_per_symbol]))
+        Q = np.mean(symbol_window * np.sin(2 * np.pi * carrier_frequency * t[i:i + samples_per_symbol]))
 
-    decoded_bits = []
-    for symbol in reshaped_signal:
-        # Compute the spectrogram of the symbol (chunk)
-        f, t, Sxx = spectrogram(symbol, fs=sample_rate, nperseg=samples_per_symbol)
+        # Decision thresholding (Hard decision detection)
+        bits.extend([
+            1 if I > 0 else 0,
+            1 if Q > 0 else 0
+        ])
 
-        # Identify the dominant frequency for the current symbol
-        dominant_freq = f[np.argmax(np.sum(Sxx, axis=1))]
+    return bits  # Flat list of 0s and 1s
 
-        # Find the closest frequency in the reverse_mapping
-        closest_freq = min(reverse_mapping.keys(), key=lambda x: abs(x - dominant_freq))
 
-        # Add the corresponding bits to the decoded sequence
-        decoded_bits.extend(reverse_mapping[closest_freq])
 
-    return decoded_bits
-
-# Example usage
-# decoded_bits = demodulate("output.wav")
-# print("Decoded bits:", decoded_bits)

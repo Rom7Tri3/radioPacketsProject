@@ -168,6 +168,17 @@ def trim_wav(input_wav, output_wav, t_1, t_2, sampling_rate=48000):
 def clean_data(input, output):
     start, end = remove_tone_preamble(input)
     trim_wav(input, output, start, end, 48000)
+    #normalize_audio(output)
+    #plot_wav(output)
+    #plot_wav('normalized_audio.wav')
+
+
+def normalize_audio(filename):
+    data, samplerate = sf.read(filename)
+    peak = np.max(np.abs(data))
+    normalization_factor = 1.0 / peak if peak > 0 else 1
+    normalized_data = data * normalization_factor
+    sf.write('normalized_audio.wav', normalized_data, samplerate)
 
 #clean_data('Noise.wav', 'no_preamble.wav')
 
