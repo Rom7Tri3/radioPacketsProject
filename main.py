@@ -6,13 +6,13 @@ import os
 import FEC as ec
 
 
-def to_bits(barr):
-    return [int(b) for byte in barr for b in format(byte, '08b')]
+def to_bits(text):
+    return [int(bit) for char in text for bit in format(ord(char), '08b')]
 
 
 def bits_to(bits):
-    byte_values = [int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
-    return bytearray(byte_values)
+    chars = [chr(int("".join(map(str, bits[i:i + 8])), 2)) for i in range(0, len(bits), 8)]
+    return "".join(chars)
 
 def extract_ascii_string(byte_data):
     return ''.join(chr(b) for b in byte_data if 32 <= b <= 126)
@@ -50,10 +50,8 @@ if __name__ == "__main__":
     input_string = input("User input: ")
     input_string = "BEGIN: " + input_string
 
-    # ReedSolo encode
-    message = ec.encode_reed_solomon(input_string)
 
-    bits = to_bits(message)
+    bits = to_bits(input_string)
     print("Original Bits:", bits)
     print("Length: ", len(bits))
 
@@ -74,24 +72,11 @@ if __name__ == "__main__":
     # Demodulate from file
     decoded_bits = demodulation.demodulate("cleaned.wav")
     flipped_bits = flip_bits(decoded_bits)
-    # Maybe remove ?
-    # decoded_bits = get_data_after_pattern(decoded_bits)
 
     print(decoded_bits)
     print("Received: ", binary_array_to_string(decoded_bits).replace("BEGIN: ", "").strip())
     print("Received: ", binary_array_to_string(flipped_bits).replace("BEGIN: ", "").strip())
-    try:
-        decoded_data = ec.decode_reed_solomon(bits_to(decoded_bits))
-        decoded_flipped_data = ec.decode_reed_solomon(bits_to(flipped_bits))
-    except Exception:
-        pass
     print("Decoded Bits:", decoded_bits)
     print("Flipped Decoded Bits: ", flipped_bits)
-    # Convert back to string
-    #output_string = extract_ascii_string(bits_to(decoded_data))
-    #output_string_flipped = extract_ascii_string(bits_to(decoded_flipped_data))
-    #print("HERE", binary_array_to_string(decoded_flipped_data))
-    #print("Decoded String:", output_string)
-    #print("Decoded String flipped:", output_string_flipped)
     print("Error rate of: ",calculate_ber(bits, decoded_bits))
 
