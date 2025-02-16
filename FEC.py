@@ -1,13 +1,13 @@
 import reedsolo
 
 
-def encode_reed_solomon(data: str, nsym=10):
+def encode_reed_solomon(data: str, nsym=15):
     rs = reedsolo.RSCodec(nsym)  # Create a Reed-Solomon encoder with nsym redundancy symbols
     encoded_data = rs.encode(data.encode())
     return encoded_data
 
 
-def decode_reed_solomon(encoded_data, nsym=10):
+def decode_reed_solomon(encoded_data, nsym=15):
     rs = reedsolo.RSCodec(nsym)
     decoded_data = rs.decode(encoded_data)[0].decode()  # Extract the first element of the tuple
     return decoded_data

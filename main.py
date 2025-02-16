@@ -42,6 +42,9 @@ def binary_array_to_string(binary_array):
     else:
         return ''.join(chr(int(b, 2)) for b in binary_array)
 
+def flip_bits(bits):
+    return [1 - bit for bit in bits]
+
 
 if __name__ == "__main__":
     input_string = input("User input: ")
@@ -52,6 +55,7 @@ if __name__ == "__main__":
 
     bits = to_bits(message)
     print("Original Bits:", bits)
+    print("Length: ", len(bits))
 
     # Modulate and save to file
     modulation.modulate(bits, "output.wav")
@@ -69,18 +73,25 @@ if __name__ == "__main__":
 
     # Demodulate from file
     decoded_bits = demodulation.demodulate("cleaned.wav")
+    flipped_bits = flip_bits(decoded_bits)
     # Maybe remove ?
     # decoded_bits = get_data_after_pattern(decoded_bits)
 
     print(decoded_bits)
-    print(binary_array_to_string(decoded_bits))
-    ec.decode_reed_solomon(bits_to(decoded_bits))
+    print("Received: ", binary_array_to_string(decoded_bits).replace("BEGIN: ", "").strip())
+    print("Received: ", binary_array_to_string(flipped_bits).replace("BEGIN: ", "").strip())
+    try:
+        decoded_data = ec.decode_reed_solomon(bits_to(decoded_bits))
+        decoded_flipped_data = ec.decode_reed_solomon(bits_to(flipped_bits))
+    except Exception:
+        pass
     print("Decoded Bits:", decoded_bits)
-
+    print("Flipped Decoded Bits: ", flipped_bits)
     # Convert back to string
-    output_string = extract_ascii_string(bits_to(decoded_bits))
-
-    print("Decoded String:", output_string)
-
+    #output_string = extract_ascii_string(bits_to(decoded_data))
+    #output_string_flipped = extract_ascii_string(bits_to(decoded_flipped_data))
+    #print("HERE", binary_array_to_string(decoded_flipped_data))
+    #print("Decoded String:", output_string)
+    #print("Decoded String flipped:", output_string_flipped)
     print("Error rate of: ",calculate_ber(bits, decoded_bits))
 
