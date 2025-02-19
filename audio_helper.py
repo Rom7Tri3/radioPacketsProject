@@ -70,7 +70,12 @@ def remove_tone_preamble(wav_file, target_freq=1000, sampling_rate=48000, thresh
             if tone_start is None:
                 tone_start = i / sampling_rate
             tone_end = (i + window_size) / sampling_rate
-    print(f"Tone detected from {tone_start} to {tone_end} seconds.")
+
+    if tone_start is None or tone_end is None:
+        print("⚠️ No preamble found, are you sure there is a message to be heard?")
+        return 0, len(signal) / sampling_rate
+
+    print(f"✅Tone detected from {tone_start} to {tone_end} seconds.")
     return tone_start, tone_end
 
 
