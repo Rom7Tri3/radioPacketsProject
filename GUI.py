@@ -65,7 +65,7 @@ class GUIApp:
         input_string = self.input_text.get()
         print(f"✍️ User input: {input_string}")
 
-        encoded_data = FEC.encode_reed_solomon("BEGIN: " + input_string)
+        encoded_data = FEC.encode_reed_solomon("BEGIN: " + input_string + ":END")
         if not isinstance(encoded_data, bytes):
             encoded_data = bytes(encoded_data)
 
