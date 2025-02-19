@@ -1,73 +1,114 @@
 import tkinter as tk
-from tkinter import messagebox
-import sounddevice as sd
-import soundfile as sf
-import numpy as np
+from tkinter import scrolledtext
+import threading
+import FEC
 import modulation
 import demodulation
 import audio_helper as ah
-import threading
+import numpy as np
 import os
-import main
-
-SAMPLE_RATE = 44100
-DURATION = 5  # Recording duration in seconds
-
-
-def send_data():
-    text = text_input.get()
-    if not text:
-        messagebox.showwarning("Warning", "Please enter text to send.")
-        return
-
-    bits = main.to_bits(text)
-    modulation.modulate(bits, filename="output.wav", baud=50, sample_rate=SAMPLE_RATE)
-    if not os.path.exists("output.wav"):
-        messagebox.showerror("Error", "Failed to create output.wav")
-        return
-
-    ah.add_tone_preamble("output.wav", "with_preamble.wav")
-    ah.play_wav("with_preamble.wav")
-    messagebox.showinfo("Info", "Transmission completed.")
+import reedsolo
+import sounddevice as sd
+import wave
+import sys
 
 
-def record_and_receive():
-    messagebox.showinfo("Info", "Recording started...")
-    recording = sd.rec(int(DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype='float32')
-    sd.wait()
-    sf.write("received.wav", recording, SAMPLE_RATE)
+class GUIApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("QAM Audio Transmission")
+        self.root.configure(bg="#2C3E50")
 
-    ah.remove_tone_preamble("received.wav", "cleaned.wav")
-    decoded_bits = demodulation.demodulate("cleaned.wav", baud=50, sample_rate=SAMPLE_RATE)
+        # Styling
+        label_font = ("Arial", 12, "bold")
+        button_font = ("Arial", 10, "bold")
+        text_font = ("Courier", 10)
 
-    if decoded_bits:
-        decoded_text = modulation.bits_to_string(decoded_bits)
-        messagebox.showinfo("Received Data", f"Decoded: {decoded_text}")
-    else:
-        messagebox.showerror("Error", "No valid data received.")
+        # Text Input
+        self.input_label = tk.Label(root, text="Enter Text:", font=label_font, fg="white", bg="#2C3E50")
+        self.input_label.pack(pady=5)
+
+        self.input_text = tk.Entry(root, width=50, font=text_font, bg="#ECF0F1", fg="#2C3E50")
+        self.input_text.pack(pady=5)
+
+        self.send_button = tk.Button(root, text="Send", font=button_font, bg="#3498DB", fg="white",
+                                     command=self.send_text)
+        self.send_button.pack(pady=5)
+
+        # Record Button
+        self.record_button = tk.Button(root, text="Start Recording", font=button_font, bg="#E74C3C", fg="white",
+                                       command=self.toggle_recording)
+        self.record_button.pack(pady=5)
+        self.is_recording = False
+
+        # Scrolling Text Output
+        self.output_text = scrolledtext.ScrolledText(root, width=80, height=20, font=text_font, bg="#ECF0F1",
+                                                     fg="#2C3E50")
+        self.output_text.pack(pady=10)
+
+        # Redirect stdout to GUI
+        sys.stdout = self
+
+    def write(self, text):
+        self.output_text.insert(tk.END, text)
+        self.output_text.see(tk.END)
+
+    def flush(self):
+        pass
+
+    def send_text(self):
+        threading.Thread(target=self.process_text).start()
+
+    def process_text(self):
+        input_string = self.input_text.get()
+        print(f"✍️ User input: {input_string}")
+
+        encoded_data = FEC.encode_reed_solomon("BEGIN: " + input_string)
+        if not isinstance(encoded_data, bytes):
+            encoded_data = bytes(encoded_data)
+
+        bits = self.to_bits(encoded_data.decode("latin-1", errors="ignore"))
+        print(f"📏 Encoded Data Length: {len(bits)} bits")
+
+        modulation.modulate(bits, "output.wav")
+        if not os.path.exists("output.wav"):
+            print("🚨 The file 'output.wav' was not created. Check modulation module.")
+            return
+
+        ah.add_tone_preamble("output.wav", "with_preamble.wav")
+        ah.play_wav("with_preamble.wav")
+
+    def toggle_recording(self):
+        if self.is_recording:
+            self.is_recording = False
+            self.record_button.config(text="Start Recording", bg="#E74C3C")
+        else:
+            self.is_recording = True
+            self.record_button.config(text="Stop Recording", bg="#27AE60")
+            threading.Thread(target=self.record_audio).start()
+
+    def record_audio(self):
+        filename = "recorded.wav"
+        duration = 5
+        samplerate = 44100
+        print(f"🎙️ Recording for {duration} seconds...")
+        audio_data = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=1, dtype=np.int16)
+        sd.wait()
+
+        with wave.open(filename, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(samplerate)
+            wf.writeframes(audio_data.tobytes())
+
+        print(f"💾 Saved recording as {filename}")
+
+    @staticmethod
+    def to_bits(text):
+        return [int(bit) for char in text for bit in format(ord(char), '08b')]
 
 
-def start_receiving():
-    threading.Thread(target=record_and_receive, daemon=True).start()
-
-
-# GUI Setup
-root = tk.Tk()
-root.title("QAM Communication")
-
-frame = tk.Frame(root, padx=20, pady=20)
-frame.pack()
-
-text_label = tk.Label(frame, text="Enter text to send:")
-text_label.pack()
-
-text_input = tk.Entry(frame, width=40)
-text_input.pack()
-
-send_button = tk.Button(frame, text="Send", command=send_data)
-send_button.pack(pady=10)
-
-receive_button = tk.Button(frame, text="Receive", command=start_receiving)
-receive_button.pack()
-
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = GUIApp(root)
+    root.mainloop()
